@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Spatial Gene Expression Viewer</title>
+  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    #plot { width: 700px; height: 600px; }
+    #error { color: red; margin-top: 10px; }
+    input, select, button { margin: 5px 10px 5px 0; padding: 5px; font-size: 16px; }
+  </style>
+</head>
+<body>
+
+  <input type="text" id="geneInput" placeholder="Enter gene name" />
+  
+  <select id="tcellDropdown">
+    <option value="">Select T cell gene</option>
+    <option value="CD3D">CD3D</option>
+    <option value="CD3E">CD3E</option>
+    <option value="CD4">CD4</option>
+    <option value="CD8A">CD8A</option>
+    <option value="CD8B">CD8B</option>
+    <option value="BDP1">BDP1</option>
+  </select>
+  
+  <button id="searchBtn">Search</button>
+
+  <div id="error"></div>
+  <div id="plot"></div>
+
+  <script>
+    let coordsCache = null;
+
+    const geneInputEl = document.getElementById("geneInput");
+    const dropdownEl = document.getElementById("tcellDropdown");
+    const errorEl = document.getElementById("error");
+    const plotDiv = document.getElementById("plot");
+
+    // Load coordinates once on page load
+    async function loadCoords() {
+      try {
+        const res = await fetch("genes/_coords.json");
+        if (!res.ok) throw new Error("Failed to load coordinates.");
+        coordsCache = await res.json();
+      } catch (e) {
+        errorEl.textContent = e.message;
+      }
+    }
+
+    async function plotGene(gene) {
+      errorEl.textContent = "";
+      plotDiv.innerHTML = "";
+
+      if (!coordsCache) {
+        errorEl.textContent = "Coordinates not loaded.";
+        return;
+      }
+
+      try {
+        const res = await fetch(`genes/${gene}.json`);
+        if (!res.ok) throw new Error(`Gene data for "${gene}" not found.`);
+
+        const expr = await res.json();
+
+        if (expr.length !== coordsCache.x.length) {
+          throw new Error("Expression and coordinates length mismatch.");
+        }
+
+        const x = coordsCache.x;
+        const y = coordsCache.y;
+
+        const expressedX = [];
+        const expressedY = [];
+        const expressedColor = [];
+
+        const nonExpressedX = [];
+        const nonExpressedY = [];
+
+        for (let i = 0; i < expr.length; i++) {
+          if (expr[i] > 0) {
+            expressedX.push(x[i]);
+            expressedY.push(y[i]);
+            expressedColor.push(expr[i]);
+          } else {
+            nonExpressedX.push(x[i]);
+            nonExpressedY.push(y[i]);
+          }
+        }
+
+        const data = [
+          {
+            x: nonExpressedX,
+            y: nonExpressedY,
+            mode: "markers",
+            type: "scattergl",
+            marker: { color: "lightgrey", size: 6 },
+            name: "Not Expressed",
+            showlegend: false
+          },
+          {
+            x: expressedX,
+            y: expressedY,
+            mode: "markers",
+            type: "scattergl",
+            marker: {
+              color: expressedColor,
+              colorscale: "magma",
+              size: 6,
+              colorbar: { title: `${gene} Expression` }
+            },
+            name: "Expressed",
+            showlegend: false
+          }
+        ];
+
+        const layout = {
+          title: `Spatial Expression of ${gene}`,
+          xaxis: { title: "Tissue X" },
+          yaxis: { title: "Tissue Y", autorange: "reversed" },
+          width: 700,
+          height: 600
+        };
+
+        Plotly.newPlot(plotDiv, data, layout);
+
+      } catch (e) {
+        errorEl.textContent = e.message;
+      }
+    }
+
+    // Clear dropdown when typing in text input
+    geneInputEl.addEventListener("input", () => {
+      dropdownEl.value = "";
+    });
+
+    // Clear text input when changing dropdown
+    dropdownEl.addEventListener("change", () => {
+      geneInputEl.value = "";
+    });
+
+    document.getElementById("searchBtn").addEventListener("click", () => {
+      const geneInput = geneInputEl.value.trim();
+      const tcellGene = dropdownEl.value;
+
+      errorEl.textContent = "";
+
+      if (geneInput !== "") {
+        plotGene(geneInput.toUpperCase());
+      } else if (tcellGene !== "") {
+        plotGene(tcellGene.toUpperCase());
+      } else {
+        errorEl.textContent = "Please enter or select a gene.";
+      }
+    });
+
+    window.onload = () => {
+      loadCoords();
+    };
+  </script>
+
+</body>
+</html>
